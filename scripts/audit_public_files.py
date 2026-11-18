@@ -27,7 +27,12 @@ SENSITIVE = re.compile(
 )
 
 
-def inspect_python(source: str) -> list[str]:
+FRONTEND_CONFIG = {
+    Path("web") / name for name in ("package.json", "package-lock.json", "tsconfig.json")
+}
+
+
+def inspect_python(source: str, *, local_server: bool = False) -> list[str]:
     issues = []
     for node in ast.walk(ast.parse(source)):
         if isinstance(node, ast.Import):
@@ -36,7 +41,16 @@ def inspect_python(source: str) -> list[str]:
             names = [node.module or ""]
         else:
             continue
-        if any(name.split(".")[0].lower() in FORBIDDEN_IMPORTS for name in names):
+        if any(
+            name.split(".")[0].lower() in FORBIDDEN_IMPORTS
+            and not (
+                local_server
+                and name == "urllib.parse"
+                and isinstance(node, ast.ImportFrom)
+                and {alias.name for alias in node.names} <= {"parse_qsl", "urlsplit"}
+            )
+            for name in names
+        ):
             issues.append(f"line {node.lineno}: forbidden import")
     return issues
 
@@ -55,7 +69,8 @@ def main() -> None:
         if path.is_symlink():
             issues.append(f"{name}: symlink")
             continue
-        if path.suffix.lower() not in {
+        web_source = path.parts[:1] == ("web",) and path.suffix in {".ts", ".tsx", ".css", ".html"}
+        if not web_source and path.suffix.lower() not in {
             ".md",
             ".py",
             ".toml",
@@ -67,13 +82,16 @@ def main() -> None:
         }:
             issues.append(f"{name}: unreviewed file type")
             continue
-        if path.suffix == ".json" and path != FIXTURE_PATH:
+        if path.suffix == ".json" and path != FIXTURE_PATH and path not in FRONTEND_CONFIG:
             issues.append(f"{name}: unreviewed data file")
         source = path.read_text(encoding="utf-8")
         if path.name != "audit_public_files.py" and SENSITIVE.search(source):
             issues.append(f"{name}: possible sensitive content")
         if path.suffix == ".py":
-            issues.extend(f"{name}: {issue}" for issue in inspect_python(source))
+            local_server = path == Path("src/xauusd_quote_lab/observatory.py")
+            issues.extend(
+                f"{name}: {issue}" for issue in inspect_python(source, local_server=local_server)
+            )
     load_fixture()
     if issues:
         raise SystemExit("\n".join(issues))

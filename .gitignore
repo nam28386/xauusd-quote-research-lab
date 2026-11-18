@@ -6,3 +6,6 @@ dist/
 *.py[cod]
 .env
 .env.*
+node_modules/
+web/test-results/
+web/playwright-report/

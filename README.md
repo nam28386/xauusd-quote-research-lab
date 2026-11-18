@@ -27,3 +27,7 @@ truth oracle, frozen schedule grid, metric conventions, and reproduction command
 
 The [P2.1 factorial study](docs/P21_FACTORIAL.md) adds matched-weight tail
 estimands, finite-phase checks and constructive identifiability examples.
+
+The [P3 read-only observatory](docs/P3_OBSERVATORY.md) provides six local
+research views. The guide covers startup, runner artifacts, API filters,
+integrity checks and filtered exports.
