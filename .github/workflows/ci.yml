@@ -22,4 +22,5 @@ jobs:
       - run: uv run --frozen --extra dev pytest -q
       - run: uv build
       - run: uv run --frozen --extra dev python -m xauusd_quote_lab.synthetic
+      - run: uv run --frozen --extra dev python -m xauusd_quote_lab.replay
       - run: uv run --frozen --extra dev python scripts/audit_public_files.py

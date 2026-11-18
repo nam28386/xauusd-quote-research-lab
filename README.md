@@ -1,7 +1,23 @@
 # XAUUSD Quote Research Lab
 
-This private research repository uses Python 3.12 to study XAUUSD bid and ask observations. All data used in Codex Cloud, including fixtures and examples, must be synthetic.
+This private research repository uses Python 3.12 to measure synthetic XAUUSD bid and ask observations. Cloud inputs, fixtures and examples are synthetic.
 
-This bootstrap establishes the repository and its research boundaries. The canonical execution specification belongs at `docs/CODEX_NEW_CHAT_MASTER.md` and must be transferred from the original execution packet before P0/P1 begins.
+Run from the repository root with Python 3.12 and uv.
 
-See `AGENTS.md` for the project rules.
+```sh
+python scripts/preflight.py
+uv sync --frozen --extra dev
+uv run --frozen --extra dev ruff check .
+uv run --frozen --extra dev ruff format --check .
+uv run --frozen --extra dev pytest -q
+uv build
+uv run --frozen --extra dev python -m xauusd_quote_lab.synthetic
+uv run --frozen --extra dev python -m xauusd_quote_lab.replay
+uv run --frozen --extra dev python scripts/audit_public_files.py
+```
+
+The evidence replay requires a checkout with committed source and fixture bytes.
+It prints deterministic JSON with the fixture SHA-256 and current Git commit.
+The fixture-only smoke command works during edits.
+
+Read [project rules](AGENTS.md), the [canonical specification](docs/CODEX_NEW_CHAT_MASTER.md), and the [versioned measurement rules](docs/RESEARCH_METHODS.md).
