@@ -21,3 +21,6 @@ It prints deterministic JSON with the fixture SHA-256 and current Git commit.
 The fixture-only smoke command works during edits.
 
 Read [project rules](AGENTS.md), the [canonical specification](docs/CODEX_NEW_CHAT_MASTER.md), and the [versioned measurement rules](docs/RESEARCH_METHODS.md).
+
+The [P2 sampling experiment](docs/P2_SAMPLING.md) defines the synthetic
+truth oracle, frozen schedule grid, metric conventions, and reproduction commands.
