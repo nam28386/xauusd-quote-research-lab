@@ -53,3 +53,34 @@ The P4 dependency audit identified PYSEC-2026-1845 in the baseline pytest
 version. The developer lock pins pytest 9.0.3, the audited fixed version.
 This affects the test harness. Candidate acceptance still requires exact
 baseline replay comparisons.
+
+## Release candidate rc2 and Windows path analysis
+
+Run 44262936290 recorded Ubuntu success on
+`6e97f129d3552bccd7aa4d21cad3c6d614a5b6c6`. Windows reached the PowerShell
+package step, where it reported `Unsafe or missing release file`; archive
+smoke was skipped. This message did not identify the file or failed
+predicate.
+
+The same failure was reproduced in the baseline packager with a temporary
+parent reached through a filesystem alias. The first failing release member
+was `examples/p1/evidence.json`. The file existed and was neither a symlink
+nor a junction. Its full lexical path differed from its resolved path; only
+the parent spelling changed. Git source and generated frontend checks had
+already succeeded. This reproduces the class of defect expected with Windows
+temporary paths spelled through an ancestor alias. The supplied Windows log
+does not confirm the original runner's private path or exact failing file.
+
+The packager now resolves the newly created private snapshot directory before
+constructing member paths. It checks the temporary directory leaf for link
+redirection and still rejects link or junction paths below that root. Failure
+messages report the logical member, path predicates, resolution relationship
+and platform, with no absolute filesystem paths. Regression tests use real
+directory aliases on Linux and Windows junctions on the hosted Windows job.
+An additional Windows test exercises native short path expansion when the
+volume exposes an alternate spelling.
+
+Archive version 0.4.0rc2 has a fresh manifest and checksum. The reader still
+supports the historical rc1 manifest. Validate both Ubuntu and Windows
+against the exact candidate head, including the archive package and smoke
+steps. Hosted Windows and manual Windows desktop evidence are separate.

@@ -1,6 +1,7 @@
 """Build and validate bounded, reproducible synthetic workstation ZIPs."""
 
 import hashlib
+import os
 import re
 import stat
 import subprocess
@@ -9,10 +10,11 @@ from tempfile import TemporaryDirectory
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 from .observatory import P2_FILES, P21_FILES, classify, json_bytes, load_dataset
-from .observatory_schema import COMMIT, SHA, decode, is_count, matches, require
+from .observatory_schema import COMMIT, SHA, InvalidArtifact, decode, is_count, matches, require
 from .replay import verified_checkout_revision
 
-VERSION = "0.4.0rc1"
+VERSION = "0.4.0rc2"
+SUPPORTED_VERSIONS = ("0.4.0rc1", VERSION)
 MANIFEST_NAME = "release-manifest.json"
 SCHEMA = "xauusd-workstation-release-v1"
 MAX_TOTAL = 128 * 1024 * 1024
@@ -96,13 +98,51 @@ def classification(name: str) -> str | None:
     return None
 
 
-def file_digest(path: Path, *, max_bytes: int = MAX_ENTRY) -> tuple[str, int]:
+def resolution_relationship(path: Path) -> str:
+    try:
+        resolved = path.resolve(strict=True)
+        if resolved == path:
+            return "same"
+        if resolved == path.parent.resolve(strict=True) / path.name:
+            return "ancestor-normalized"
+        return "redirected-or-leaf-normalized"
+    except (OSError, RuntimeError):
+        return "unavailable"
+
+
+def file_digest(path: Path, *, member: str, max_bytes: int = MAX_ENTRY) -> tuple[str, int]:
+    safe_name(member)
+    try:
+        is_file = path.is_file()
+        symlink = path.is_symlink()
+        junction = path.is_junction()
+        relationship = resolution_relationship(path)
+        if not is_file or symlink or junction or relationship != "same":
+            raise InvalidArtifact(
+                f"Unsafe or missing release file: {member} "
+                f"(exists={path.exists()}, file={is_file}, directory={path.is_dir()}, "
+                f"symlink={symlink}, junction={junction}, resolution={relationship}, platform={os.name})"
+            )
+        with path.open("rb") as file:
+            return stream_digest(file, max_bytes=max_bytes)
+    except (OSError, RuntimeError):
+        raise InvalidArtifact(f"Could not inspect or read release file: {member}") from None
+
+
+def snapshot_root(path: Path) -> Path:
+    """Normalize ancestry only at the boundary of a newly created private temp directory."""
     require(
-        path.is_file() and not path.is_symlink() and path.resolve() == path,
-        "Unsafe or missing release file",
+        path.is_dir() and not path.is_symlink() and not path.is_junction(),
+        "Unsafe private release snapshot directory",
     )
-    with path.open("rb") as file:
-        return stream_digest(file, max_bytes=max_bytes)
+    resolved = path.resolve(strict=True)
+    require(
+        resolved == path.parent.resolve(strict=True) / path.name,
+        "Private release snapshot directory was redirected",
+    )
+    if resolved != path:
+        print(f"Normalized private release snapshot ancestry (platform={os.name})", flush=True)
+    return resolved
 
 
 def stream_digest(file, *, max_bytes: int) -> tuple[str, int]:
@@ -134,7 +174,7 @@ def committed_source(root: Path, revision: str) -> dict[str, tuple[Path, dict]]:
         require(approved_source(name), f"Unapproved tracked release file: {name}")
         data = subprocess.check_output(["git", "cat-file", "blob", f"{revision}:{name}"], cwd=root)
         path = root / name
-        digest, count = file_digest(path)
+        digest, count = file_digest(path, member=name)
         require(
             count == len(data) and digest == hashlib.sha256(data).hexdigest(),
             f"Tracked release source differs from commit: {name}",
@@ -155,8 +195,9 @@ def frontend_files(root: Path) -> dict[str, tuple[Path, dict]]:
     require(len(entries) >= 3, "Incomplete frontend build")
     result = {}
     for path in entries:
-        digest, count = file_digest(path)
-        result[path.relative_to(root).as_posix()] = (path, entry_meta(digest, count, "frontend"))
+        member = path.relative_to(root).as_posix()
+        digest, count = file_digest(path, member=member)
+        result[member] = (path, entry_meta(digest, count, "frontend"))
     return result
 
 
@@ -175,8 +216,9 @@ def create_release(root: Path, artifact_root: Path, output: Path) -> Path:
     entries.update(frontend_files(root))
     datasets = {}
     with TemporaryDirectory(prefix="workstation-package-") as temp:
+        cache = snapshot_root(Path(temp))
         for name in ("p1", "p2", "p21"):
-            dataset = load_dataset(name, artifact_root / name, Path(temp) / name, None)
+            dataset = load_dataset(name, artifact_root / name, cache / name, None)
             require(
                 dataset.code_sha == revision,
                 "Release datasets must be prepared at the packaged commit",
@@ -186,8 +228,8 @@ def create_release(root: Path, artifact_root: Path, output: Path) -> Path:
                 dataset.artifacts.keys() | ({"manifest.json"} if dataset.manifest else set())
             ):
                 path = dataset.root / filename
-                digest, count = file_digest(path)
                 arcname = f"examples/{name}/{filename}"
+                digest, count = file_digest(path, member=arcname)
                 classification = dataset.artifacts.get(filename, {}).get(
                     "classification", "research-manifest"
                 )
@@ -228,7 +270,7 @@ def create_release(root: Path, artifact_root: Path, output: Path) -> Path:
                 bundle.writestr(zip_info(name), content, compresslevel=9)
         verify_archive(archive)
         (output / MANIFEST_NAME).write_bytes(payload)
-        zip_digest, _ = file_digest(archive.resolve(), max_bytes=MAX_TOTAL)
+        zip_digest, _ = file_digest(archive.resolve(), member=archive.name, max_bytes=MAX_TOTAL)
         (output / "SHA256SUMS").write_text(
             f"{zip_digest}  {archive.name}\n{hashlib.sha256(payload).hexdigest()}  {MANIFEST_NAME}\n",
             encoding="ascii",
@@ -243,7 +285,7 @@ def validate_manifest(payload: bytes) -> dict:
     require(
         isinstance(manifest, dict)
         and manifest.get("schema_version") == SCHEMA
-        and manifest.get("release_version") == VERSION
+        and manifest.get("release_version") in SUPPORTED_VERSIONS
         and manifest.get("classification") == "SYNTHETIC"
         and matches(COMMIT, manifest.get("code_sha")),
         "Unsupported release manifest",
@@ -331,10 +373,10 @@ def verify_archive(path: Path, independent_sha: str | None = None) -> dict:
 def verify_installed(root: Path) -> dict:
     root = root.resolve()
     path = root / MANIFEST_NAME
-    file_digest(path, max_bytes=MAX_MANIFEST)
+    file_digest(path, member=MANIFEST_NAME, max_bytes=MAX_MANIFEST)
     manifest = validate_manifest(path.read_bytes())
     for name, meta in manifest["files"].items():
-        actual = file_digest(root / name, max_bytes=meta["bytes"])
+        actual = file_digest(root / name, member=name, max_bytes=meta["bytes"])
         require(
             actual == (meta["sha256"], meta["bytes"]), f"Installed release file mismatch: {name}"
         )

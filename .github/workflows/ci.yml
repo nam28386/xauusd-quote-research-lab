@@ -45,10 +45,10 @@ jobs:
         run: .\workstation.ps1 package --artifacts dist/observatory-inputs --output dist/workstation-release
       - if: runner.os == 'Windows'
         shell: pwsh
-        run: .\workstation.ps1 smoke --archive dist/workstation-release/xauusd-quote-lab-0.4.0rc1.zip
+        run: .\workstation.ps1 smoke --archive dist/workstation-release/xauusd-quote-lab-0.4.0rc2.zip
       - if: runner.os == 'Linux'
         run: sh workstation.sh preflight
       - if: runner.os == 'Linux'
         run: sh workstation.sh package --artifacts dist/observatory-inputs --output dist/workstation-release
       - if: runner.os == 'Linux'
-        run: sh workstation.sh smoke --archive dist/workstation-release/xauusd-quote-lab-0.4.0rc1.zip
+        run: sh workstation.sh smoke --archive dist/workstation-release/xauusd-quote-lab-0.4.0rc2.zip
