@@ -6,10 +6,12 @@ import json
 import os
 import re
 import stat
+import sys
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from threading import Thread
 from urllib.parse import parse_qsl, urlsplit
 
 from .observatory_schema import (
@@ -531,6 +533,20 @@ class Observatory:
 
     def dispatch(self, path: str, query: dict) -> tuple[bytes | Path, str, str | None]:
         parts = path.split("/")
+        if path == "/api/v1/health" and not query:
+            return (
+                json_bytes(
+                    {
+                        "status": "ready",
+                        "api_version": API_VERSION,
+                        "mode": "read-only",
+                        "classification": "SYNTHETIC",
+                        "datasets": sorted(self.datasets),
+                    }
+                ),
+                "application/json",
+                None,
+            )
         if path == "/api/v1/datasets" and not query:
             return (
                 json_bytes(
@@ -688,8 +704,12 @@ def main(argv=None):
             f"--{family}-sha256", help="Trusted manifest digest (P1 evidence digest)"
         )
     parser.add_argument("--web", type=Path, default=Path("web/dist"))
+    parser.add_argument("--host", choices=("127.0.0.1",), default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--shutdown-on-stdin", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+    if not 0 <= args.port <= 65535:
+        parser.error("--port must be between 0 and 65535")
     try:
         with TemporaryDirectory(prefix="xauusd-observatory-") as cache:
             datasets = {
@@ -704,7 +724,14 @@ def main(argv=None):
             web = args.web.resolve(strict=True)
             require((web / "index.html").is_file(), "Build the frontend first")
             app = Observatory(datasets, web)
-            with ThreadingHTTPServer(("127.0.0.1", args.port), handler(app)) as server:
+            with ThreadingHTTPServer((args.host, args.port), handler(app)) as server:
+                if args.shutdown_on_stdin:
+
+                    def wait_for_parent():
+                        sys.stdin.readline()
+                        server.shutdown()
+
+                    Thread(target=wait_for_parent, daemon=True).start()
                 print(
                     f"Synthetic Research Observatory http://127.0.0.1:{server.server_port}",
                     flush=True,

@@ -1,0 +1,34 @@
+{
+  "authorization": {
+    "decision": "AUTHORIZED",
+    "license_or_permission": "Project synthetic test fixture"
+  },
+  "clocks": {
+    "monotonic_domain": null,
+    "processing_domain": "synthetic-epoch-ns",
+    "receive_domain": "synthetic-epoch-ns",
+    "source_comparable_to_receive": true,
+    "source_domain": "synthetic-epoch-ms"
+  },
+  "data_file": "observations.jsonl",
+  "environment": "MOCK",
+  "instrument": {
+    "price_unit": "USD_PER_TROY_OUNCE",
+    "quote_currency": "USD",
+    "spec_version": "example-v1",
+    "symbol": "XAUUSD"
+  },
+  "processing": {
+    "policy_version": "raw-v1",
+    "producer": "Workstation synthetic fixture",
+    "transformations": []
+  },
+  "provenance_class": "SYNTHETIC",
+  "schema_version": "offline-quote-jsonl-v1",
+  "session_id": "offline-synthetic-session",
+  "source": {
+    "acquisition_method": "SYNTHETIC_GENERATOR",
+    "identity": "SANITIZED-SYNTHETIC-V1"
+  },
+  "source_sha256": "f66fdf943d91eb9db08166049f4628fa698143a2129a2f98136de91fb08dd737"
+}
