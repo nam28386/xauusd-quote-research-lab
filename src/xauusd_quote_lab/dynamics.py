@@ -3,6 +3,7 @@
 from collections import Counter
 from dataclasses import dataclass
 from decimal import Decimal, localcontext
+from itertools import dropwhile
 from typing import ClassVar
 
 from .contracts import Flag, QuoteStream
@@ -30,7 +31,7 @@ class WideningEvent:
 
 @dataclass(frozen=True, slots=True)
 class QuoteDynamics:
-    VERSION: ClassVar[str] = "quote-dynamics-v1"
+    VERSION: ClassVar[str] = "quote-dynamics-v1.1"
     source_id: str
     session_id: str
     start_ns: int
@@ -68,8 +69,12 @@ def measure_dynamics(
     ):
         raise ValueError("Expected a finite positive Decimal widening threshold")
 
+    # Drop the leading pre-window prefix only. A later regressed poll still breaks continuity.
     rows = tuple(
-        item for item in evaluate_stream(stream, end_ns) if item[0].received_wall_ns >= start_ns
+        dropwhile(
+            lambda item: item[0].received_wall_ns < start_ns,
+            evaluate_stream(stream, end_ns),
+        )
     )
     changes = []
     events = []

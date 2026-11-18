@@ -9,6 +9,11 @@ from typing import ClassVar
 
 SHA256 = re.compile(r"[0-9a-f]{64}")
 GIT_SHA = re.compile(r"[0-9a-f]{40}")
+MAX_EVIDENCE_BYTES = 65_536
+
+
+def nonempty_text(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
 
 
 class EpistemicStatus(StrEnum):
@@ -34,9 +39,10 @@ class InputProvenance:
         if (
             self.provenance_class != "SYNTHETIC"
             or not SHA256.fullmatch(self.sha256)
-            or not self.fixture_id
+            or not nonempty_text(self.fixture_id)
             or not self.session_ids
             or not self.source_ids
+            or not all(nonempty_text(item) for item in (*self.session_ids, *self.source_ids))
         ):
             raise ValueError(
                 "Evidence requires synthetic fixture identity, hash, sessions and sources"
@@ -52,6 +58,10 @@ class Claim:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "status", EpistemicStatus(self.status))
+        if not nonempty_text(self.statement) or (
+            self.unit is not None and not nonempty_text(self.unit)
+        ):
+            raise ValueError("Claims require a statement and an explicit unit when provided")
         if self.value is not None and not (
             type(self.value) is int or isinstance(self.value, Decimal) and self.value.is_finite()
         ):
@@ -94,12 +104,36 @@ class ResearchEvidencePacket:
             "falsifiers",
             "limitations",
         ):
-            object.__setattr__(self, name, tuple(getattr(self, name)))
+            values = getattr(self, name)
+            if isinstance(values, (str, bytes)):
+                raise ValueError(f"Expected a sequence of records or text in {name}")
+            object.__setattr__(self, name, tuple(values))
         for name in ("parameters", "exclusion_counts"):
-            items = tuple(sorted((key, value) for key, value in getattr(self, name)))
+            items = tuple((key, value) for key, value in getattr(self, name))
+            if any(not nonempty_text(key) for key, _ in items):
+                raise ValueError(f"Expected text keys in {name}")
             if len({key for key, _ in items}) != len(items):
                 raise ValueError(f"Duplicate keys in {name}")
-            object.__setattr__(self, name, items)
+            object.__setattr__(self, name, tuple(sorted(items)))
+        if not all(isinstance(item, InputProvenance) for item in self.inputs):
+            raise ValueError("Inputs must be InputProvenance records")
+        if not all(
+            isinstance(item, Claim) for item in (*self.findings, *self.candidate_explanations)
+        ):
+            raise ValueError("Findings and candidate explanations must be Claim records")
+        descriptions = (
+            self.research_id,
+            self.question,
+            *self.schema_versions,
+            *self.metric_versions,
+            *self.clock_assumptions,
+            *self.falsifiers,
+            *self.limitations,
+        )
+        if not all(nonempty_text(item) for item in descriptions) or (
+            self.hypothesis_id is not None and not nonempty_text(self.hypothesis_id)
+        ):
+            raise ValueError("Expected nonempty evidence text")
         if (
             type(self.created_wall_ns) is not int
             or self.created_wall_ns < 0
@@ -121,9 +155,13 @@ class ResearchEvidencePacket:
 
     def to_json(self) -> str:
         payload = _json_value(self)
-        return json.dumps(
+        encoded = json.dumps(
             payload, sort_keys=True, ensure_ascii=True, allow_nan=False, separators=(",", ":")
         )
+        # ASCII escaping makes the character count identical to the UTF-8 byte count.
+        if len(encoded) > MAX_EVIDENCE_BYTES:
+            raise ValueError(f"Evidence packet exceeds {MAX_EVIDENCE_BYTES} bytes")
+        return encoded
 
 
 def _json_value(value: object) -> object:

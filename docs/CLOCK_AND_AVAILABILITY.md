@@ -22,3 +22,8 @@ Per-process monotonic time is preserved but excluded from wall alignment.
 
 A decision-clock age is elapsed wall time since recorded receipt. Timestamp
 error, clock skew and coarseness limit what can be inferred about availability.
+
+The v1.1 measurement rules check comparable source clocks independently of
+processing and monotonic clock validity. A future source timestamp is excluded
+from the source-order watermark even when another clock is malformed. A
+negative receive timestamp cannot initialize the source watermark.

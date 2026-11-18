@@ -131,21 +131,52 @@ def replay(code_sha: str) -> ResearchEvidencePacket:
     )
 
 
+def verified_checkout_revision(root: Path) -> str:
+    def git_bytes(*args: str) -> bytes:
+        return subprocess.check_output(["git", *args], cwd=root, stderr=subprocess.PIPE)
+
+    root = root.resolve()
+    top_level = Path(git_bytes("rev-parse", "--show-toplevel").decode().rstrip("\r\n")).resolve()
+    package = Path("src/xauusd_quote_lab")
+    if top_level != root or Path(__file__).resolve() != root / package / "replay.py":
+        raise ValueError("Run replay from the repository root using its editable package")
+    revision = git_bytes("rev-parse", "--verify", "HEAD^{commit}").decode("ascii").strip()
+    if not re.fullmatch(r"[0-9a-f]{40}", revision):
+        raise ValueError("A full Git commit SHA is required")
+
+    required = {
+        "pyproject.toml",
+        "uv.lock",
+        FIXTURE_PATH.as_posix(),
+        f"{package.as_posix()}/replay.py",
+    }
+    paths = ["src", "pyproject.toml", "uv.lock", FIXTURE_PATH.as_posix()]
+    tracked = set(
+        git_bytes("ls-tree", "-r", "-z", "--name-only", revision, "--", *paths)
+        .decode("utf-8")
+        .split("\0")
+    ) - {""}
+    if not required <= tracked or git_bytes(
+        "ls-files", "--others", "--exclude-standard", "--", *paths
+    ):
+        raise ValueError("Commit replay code and inputs before producing evidence")
+    # Inspect blobs directly so index stat hints cannot hide modified source.
+    for name in sorted(tracked):
+        path = root / name
+        if path.resolve() != path or path.read_bytes() != git_bytes(
+            "cat-file", "blob", f"{revision}:{name}"
+        ):
+            raise ValueError(f"Checkout bytes differ from the commit at {name}")
+    return revision
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.parse_args()
-    root = Path.cwd()
-    revision = subprocess.check_output(["git", "rev-parse", "--verify", "HEAD"], text=True).strip()
-    if not re.fullmatch(r"[0-9a-f]{40}", revision):
-        raise SystemExit("A full Git commit SHA is required")
-    # Prevent a clean commit SHA from being attributed to modified implementation or inputs.
-    paths = ["src", "pyproject.toml", "uv.lock", str(FIXTURE_PATH)]
-    diff = subprocess.run(["git", "diff", "--quiet", "HEAD", "--", *paths], cwd=root)
-    untracked = subprocess.check_output(
-        ["git", "ls-files", "--others", "--exclude-standard", "--", *paths], cwd=root
-    )
-    if diff.returncode or untracked:
-        raise SystemExit("Commit replay code and inputs before producing evidence")
+    try:
+        revision = verified_checkout_revision(Path.cwd())
+    except (OSError, ValueError, subprocess.CalledProcessError) as exc:
+        raise SystemExit(f"Replay provenance: {exc}") from None
     print(replay(revision).to_json())
 
 

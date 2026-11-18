@@ -16,6 +16,7 @@ def test_deterministic_evidence_golden_replay():
     assert replay(SHA).to_json() == packet.to_json()
     payload = json.loads(packet.to_json())
     assert payload["version"] == "research-evidence-packet-v1"
+    assert payload["metric_versions"] == ["quote-dynamics-v1.1", "broker-comparison-v1.1"]
     assert payload["inputs"][0]["sha256"] == FIXTURE_SHA256
     assert payload["inputs"][0]["source_ids"] == ["alpha", "beta", "gamma", "delta"]
     assert payload["inputs"][0]["session_ids"] == ["golden-session-v1"]
@@ -51,3 +52,19 @@ def test_evidence_rejects_invalid_provenance_and_epistemic_value():
         Claim(EpistemicStatus.UNKNOWN, "not observed", Decimal(0))
     with pytest.raises(ValueError, match="finite"):
         Claim(EpistemicStatus.MEASUREMENT, "undefined", Decimal("NaN"))
+
+
+def test_evidence_rejects_untyped_nested_provenance():
+    packet = replay(SHA)
+    with pytest.raises(ValueError, match="InputProvenance"):
+        replace(packet, inputs=({"fixture_id": "synthetic"},))
+    with pytest.raises(ValueError, match="Claim"):
+        replace(packet, findings=({"status": "MEASUREMENT", "value": 0.45},))
+    with pytest.raises(ValueError, match="schema_versions"):
+        replace(packet, schema_versions="quote-observation-v1")
+
+
+def test_evidence_serialization_rejects_over_budget_packet():
+    packet = replace(replay(SHA), limitations=("x" * 65_536,))
+    with pytest.raises(ValueError, match="65536 bytes"):
+        packet.to_json()

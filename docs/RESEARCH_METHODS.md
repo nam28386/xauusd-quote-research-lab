@@ -53,3 +53,13 @@ At 125 ns the four spreads are 0.60, 0.40, 0.30 and 0.50. Their median is
 120 ns quote. Alpha's spread sequence contains four eligible snapshots with
 mean 0.325. Its three 10 ns intervals contribute spread weights 2.5, 2.5 and
 6.0, for duration mean 11/30. Alpha's 120 ns widening is censored at 130 ns.
+
+## Measurement revision v1.1
+
+The v1.1 dynamics and comparison identifiers mark corrections to malformed
+clock handling. A pre-window receipt timestamp on a poll that follows an
+in-window poll still terminates continuity. A malformed processing clock
+cannot hide a future source timestamp from eligibility checks. Decimal
+precision and rounding are fixed independently of Python's ambient defaults.
+The reviewed golden fixture produces identical quantitative outputs under both
+measurement revisions.

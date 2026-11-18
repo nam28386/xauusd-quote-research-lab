@@ -2,12 +2,29 @@
 
 import re
 from dataclasses import dataclass
-from decimal import Context, Decimal, localcontext
+from decimal import (
+    ROUND_HALF_EVEN,
+    Context,
+    Decimal,
+    DivisionByZero,
+    InvalidOperation,
+    Overflow,
+    localcontext,
+)
 from typing import ClassVar
 
 from .contracts import Flag, InstrumentSpec, PriceUnit, QuoteObservation, QuoteStream
 
-PRICE_CONTEXT = Context(prec=128)
+PRICE_CONTEXT = Context(
+    prec=128,
+    rounding=ROUND_HALF_EVEN,
+    Emin=-999999,
+    Emax=999999,
+    capitals=1,
+    clamp=0,
+    flags=[],
+    traps=[InvalidOperation, DivisionByZero, Overflow],
+)
 PRICE_TEXT = re.compile(r"[0-9]{1,32}(?:\.[0-9]{1,32})?")
 NONBLOCKING = frozenset({Flag.DUPLICATE_SNAPSHOT, Flag.PARTIAL_COVERAGE})
 
@@ -75,23 +92,37 @@ def inspect_quote(
         if spec.price_unit != PriceUnit.USD_PER_TROY_OUNCE or spec.quote_currency != "USD":
             flags.add(Flag.UNKNOWN_UNIT)
 
-    clocks = (row.received_wall_ns, row.processing_wall_ns, source_ms, row.received_monotonic_ns)
-    if any(type(clock) is not int or clock < 0 for clock in clocks[:2]) or any(
-        clock is not None and (type(clock) is not int or clock < 0) for clock in clocks[2:]
+    receive_valid = valid_timestamp(row.received_wall_ns)
+    processing_valid = valid_timestamp(row.processing_wall_ns)
+    if (
+        not receive_valid
+        or not processing_valid
+        or any(
+            clock is not None and not valid_timestamp(clock)
+            for clock in (source_ms, row.received_monotonic_ns)
+        )
     ):
         flags.add(Flag.INVALID_TIMESTAMP)
-    else:
-        if row.processing_wall_ns < row.received_wall_ns:
-            flags.add(Flag.WALL_CLOCK_REVERSAL)
-        if source_clock_comparable and source_ms is not None:
-            if source_ms * 1_000_000 > row.received_wall_ns:
-                flags.add(Flag.FUTURE_TIMESTAMP)
+    if receive_valid and processing_valid and row.processing_wall_ns < row.received_wall_ns:
+        flags.add(Flag.WALL_CLOCK_REVERSAL)
+    if (
+        source_clock_comparable
+        and receive_valid
+        and source_ms is not None
+        and valid_timestamp(source_ms)
+        and source_ms * 1_000_000 > row.received_wall_ns
+    ):
+        flags.add(Flag.FUTURE_TIMESTAMP)
 
     quality = QualityState(frozenset(flags))
     prices = (
         QuotedPrices(bid, ask) if quality.eligible and bid is not None and ask is not None else None
     )
     return quality, prices
+
+
+def valid_timestamp(value: object) -> bool:
+    return type(value) is int and value >= 0
 
 
 def evaluate_stream(
@@ -126,8 +157,8 @@ def evaluate_stream(
                 flags.add(Flag.WALL_CLOCK_REVERSAL)
             processing_high = max(processing_high, row.processing_wall_ns)
         source_ms = row.source_time_ms_or_null
-        if type(source_ms) is int:
-            if 0 <= source_ms < source_high:
+        if source_ms is not None and valid_timestamp(source_ms) and row.received_wall_ns >= 0:
+            if source_ms < source_high:
                 flags.add(Flag.SOURCE_OUT_OF_ORDER)
             if Flag.FUTURE_TIMESTAMP not in flags:
                 source_high = max(source_high, source_ms)

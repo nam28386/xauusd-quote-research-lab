@@ -68,3 +68,17 @@ def test_equal_receive_timestamp_uses_last_poll_sequence(one_row):
     point = compare(replace(stream, observations=(stream.observations[0], invalid)), 100)[0]
     assert point.matches[0].poll_sequence == 1
     assert point.matches[0].prices is None
+
+
+def test_malformed_wall_clock_cannot_hide_future_source_or_poison_watermark(one_row):
+    stream = one_row((1_000_000, 2_000_000))
+    first, next_row = stream.observations
+    malformed = replace(first, processing_wall_ns=-1, source_time_ms_or_null=10)
+    legitimate = replace(next_row, source_time_ms_or_null=2)
+    points = compare(
+        replace(stream, observations=(malformed, legitimate), source_clock_comparable=True),
+        1_000_000,
+        2_000_000,
+    )
+    assert points[0].matches[0].exclusions == {Flag.INVALID_TIMESTAMP, Flag.FUTURE_TIMESTAMP}
+    assert points[1].matches[0].prices is not None

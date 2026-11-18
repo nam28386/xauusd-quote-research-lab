@@ -79,3 +79,15 @@ def test_metadata_version_breaks_deltas_and_censors_widening(streams):
     assert result.valid_snapshots == 2
     assert result.changes == ()
     assert result.widening == (WideningEvent(120, 140, 20, False, "instrument_spec_changed", True),)
+
+
+def test_regression_below_window_start_censors_instead_of_recovering(streams):
+    stream = streams[0]
+    wide = stream.observations[2]
+    reversed_poll = replace(wide, poll_sequence=3, received_wall_ns=90, processing_wall_ns=125)
+    narrow = stream.observations[4]
+    result = measure(replace(stream, observations=(wide, reversed_poll, narrow)))
+    assert result.widening == (WideningEvent(120, 120, 0, False, "wall_clock_reversal", True),)
+    assert result.covered_ns == 0
+    assert result.revision_count == 0
+    assert dict(result.exclusions) == {Flag.WALL_CLOCK_REVERSAL: 1}

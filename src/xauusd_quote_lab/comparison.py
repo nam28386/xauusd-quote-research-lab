@@ -45,7 +45,7 @@ class ComparisonPoint:
 
 @dataclass(frozen=True, slots=True)
 class BrokerComparison:
-    VERSION: ClassVar[str] = "broker-comparison-v1"
+    VERSION: ClassVar[str] = "broker-comparison-v1.1"
     receive_clock_domain: str
     max_age_ns: int
     representatives: tuple[tuple[str, str], ...]
