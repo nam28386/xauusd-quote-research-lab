@@ -230,3 +230,20 @@ def test_local_http_rejects_writes_cross_origin_and_path_traversal(app):
         finally:
             server.shutdown()
             worker.join(timeout=5)
+
+
+def test_rehashed_source_with_incompatible_units_is_rejected(artifact_root, tmp_path):
+    src = Path(copytree(artifact_root / "p2", tmp_path / "wrong-unit"))
+    name = "input-stable.json"
+    content = (
+        (src / name).read_bytes().replace(b'"quote_currency":"USD"', b'"quote_currency":"EUR"', 1)
+    )
+    (src / name).write_bytes(content)
+    manifest = json.loads((src / "manifest.json").read_bytes())
+    manifest["artifacts"][name] = {
+        "bytes": len(content),
+        "sha256": hashlib.sha256(content).hexdigest(),
+    }
+    (src / "manifest.json").write_bytes(json_bytes(manifest))
+    with pytest.raises(InvalidArtifact, match="Unsupported quote unit"):
+        load_dataset("p2", src, tmp_path / "cache", None)

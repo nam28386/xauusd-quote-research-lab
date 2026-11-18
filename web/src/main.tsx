@@ -51,7 +51,7 @@ function Plot({traces, axes, onSelect, label}: {
     const chart = node.current!;
     let active = true;
     let dispose: (() => void) | undefined;
-    import("plotly.js-cartesian-dist-min").then(plotly => {
+    import("plotly.js-cartesian-dist-min").then(({default: plotly}) => {
       if (!active) return;
       dispose = () => plotly.purge(chart);
       return plotly.newPlot(chart, traces, {

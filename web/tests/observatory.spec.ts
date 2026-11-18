@@ -14,6 +14,18 @@ test("renders verified routes, interactive charts and exact configuration links"
   await expect(heat.locator(".heatmaplayer image")).toBeVisible();
   await page.getByLabel("Transport delay (ms)").selectOption("100");
   await expect(page.locator("figcaption").getByText(/transport_ms=100/)).toBeVisible();
+  const source = await (await page.request.get("/api/v1/table/p21?scenario=isolated&phase_percent=0&transport_ms=100&processing_ms=0")).json();
+  const trace = await heat.evaluate(node => {
+    const plot = node as HTMLElement & {data: {customdata: number[][]; z: (number|null)[][]}[]};
+    return plot.data[0];
+  });
+  for (const {ordinal, data} of source.rows) {
+    const row = trace.customdata.findIndex(values => values.includes(ordinal));
+    expect(row).toBeGreaterThanOrEqual(0);
+    const column = trace.customdata[row].indexOf(ordinal);
+    const wire = data.streams[0].events.recall;
+    expect(trace.z[row][column]).toBe(wire === null ? null : Number(wire));
+  }
   const image = heat.locator(".heatmaplayer image");
   await expect(image).toBeVisible();
   const rect = await image.boundingBox();

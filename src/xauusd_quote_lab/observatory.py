@@ -26,6 +26,7 @@ from .observatory_schema import (
     decode,
     evidence,
     history,
+    instrument_versions,
     is_count,
     matches,
     object_keys,
@@ -236,11 +237,12 @@ def assert_input(row):
         content["version"] == "p21-factorial-truth-v1" and content["provenance"] == "SYNTHETIC",
         "Unsupported source schema",
     )
+    specs = instrument_versions(content["specs"])
     for cohort in objects(content["cohorts"], max_items=4):
         for source in objects(
             object_keys(cohort, {"histories", "start_ns", "end_ns"})["histories"], max_items=4
         ):
-            history(source)
+            history(source, specs)
     validate_fields(row)
     require(
         hashlib.sha256(json_bytes(content)).hexdigest() == obj["input_sha256"],
@@ -334,15 +336,16 @@ def load_dataset(family: str, source: Path, target: Path, pin: str | None) -> Da
         for row in objects(decoded["results.json"]):
             row_config(row, family)
         for name in (f"input-{scenario}.json" for scenario in P2_NAMES):
-            obj = object_keys(decoded[name], {"version", "provenance", "scenario"})
+            obj = object_keys(decoded[name], {"version", "provenance", "scenario", "specs"})
             require(
                 obj["version"] == "p2-synthetic-history-v1" and obj["provenance"] == "SYNTHETIC",
                 "Unsupported P2 input format",
             )
+            specs = instrument_versions(obj["specs"])
             for source in objects(
                 object_keys(obj["scenario"], {"histories"})["histories"], max_items=4
             ):
-                history(source)
+                history(source, specs)
     else:
         tables["truth"] = scan_lines(target / "truth-inputs.jsonl", assert_input)
         fingerprints = {row["input_sha256"] for row in tables["truth"].filters}

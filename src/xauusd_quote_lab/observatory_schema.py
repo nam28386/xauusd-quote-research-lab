@@ -437,7 +437,26 @@ def quote(value):
     check_decimal(row["ask_text"])
 
 
-def history(value):
+def instrument_versions(value) -> set[str]:
+    result = set()
+    for spec in objects(value, max_items=16):
+        object_keys(spec, {"canonical_symbol", "price_unit", "quote_currency", "spec_version"})
+        require(spec["canonical_symbol"] == "XAUUSD", "Unsupported instrument")
+        require(
+            (spec["price_unit"] == "USD_PER_TROY_OUNCE" and spec["quote_currency"] == "USD")
+            or (spec["price_unit"] == "UNKNOWN" and spec["quote_currency"] in (None, "USD")),
+            "Unsupported quote unit",
+        )
+        version = spec["spec_version"]
+        require(
+            isinstance(version, str) and version and version not in result, "Invalid spec version"
+        )
+        result.add(version)
+    require(bool(result), "Missing instrument specs")
+    return result
+
+
+def history(value, spec_versions: set[str] | None = None):
     h = object_keys(value, {"source", "events"})
     source = object_keys(
         h["source"], {"source_id", "session_id", "provenance_class", "ingestion_mode"}
@@ -450,6 +469,10 @@ def history(value):
         object_keys(event, {"event_ns", "arrival", "truth_exclusion"})
         require(matches(INTEGER_TEXT, event["event_ns"]), "Invalid source-event timestamp")
         quote(event["arrival"])
+        require(
+            spec_versions is None or event["arrival"]["instrument_spec_version"] in spec_versions,
+            "Unknown observation spec",
+        )
         require(
             all(event["arrival"][k] == source[k] for k in ("source_id", "session_id")),
             "Source/session does not match its quote",
