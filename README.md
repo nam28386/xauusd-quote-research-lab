@@ -31,3 +31,8 @@ estimands, finite-phase checks and constructive identifiability examples.
 The [P3 read-only observatory](docs/P3_OBSERVATORY.md) provides six local
 research views. The guide covers startup, runner artifacts, API filters,
 integrity checks and filtered exports.
+
+The [P4 offline workstation](docs/P4_WORKSTATION.md) documents Windows and
+Linux launch, clean release verification, and the source build. The
+[offline input contract](docs/P4_OFFLINE_IMPORT.md) covers validated
+synthetic fixtures and quarantine receipts.
