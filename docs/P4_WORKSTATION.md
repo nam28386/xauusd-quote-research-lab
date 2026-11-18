@@ -1,4 +1,4 @@
-# Offline workstation release candidate 0.4.0rc2
+# Offline workstation release candidate 0.4.0rc3
 
 The ZIP ships tracked project source and lockfiles, a prebuilt local
 Observatory, frozen synthetic examples for P1/P2/P2.1, two synthetic offline
@@ -13,8 +13,8 @@ Compare the download against a SHA-256 value obtained through a trusted
 channel. The adjacent SHA256SUMS records the release bytes for comparison.
 
 ```powershell
-Get-FileHash .\xauusd-quote-lab-0.4.0rc2.zip -Algorithm SHA256
-Expand-Archive -LiteralPath .\xauusd-quote-lab-0.4.0rc2.zip -DestinationPath .\workstation
+Get-FileHash .\xauusd-quote-lab-0.4.0rc3.zip -Algorithm SHA256
+Expand-Archive -LiteralPath .\xauusd-quote-lab-0.4.0rc3.zip -DestinationPath .\workstation
 Set-Location .\workstation
 .\workstation.ps1 preflight --offline
 .\workstation.ps1 start --port 8765
@@ -54,8 +54,8 @@ the prepared data. To regenerate it, use a Git checkout of the manifest SHA.
 
 ```powershell
 .\workstation.ps1 package --output dist/release-candidate
-.\workstation.ps1 verify --archive dist/release-candidate/xauusd-quote-lab-0.4.0rc2.zip
-.\workstation.ps1 smoke --archive dist/release-candidate/xauusd-quote-lab-0.4.0rc2.zip
+.\workstation.ps1 verify --archive dist/release-candidate/xauusd-quote-lab-0.4.0rc3.zip
+.\workstation.ps1 smoke --archive dist/release-candidate/xauusd-quote-lab-0.4.0rc3.zip
 ```
 
 Packaging rebuilds the locked frontend, verifies source bytes against Git,

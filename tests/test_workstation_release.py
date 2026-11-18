@@ -227,7 +227,61 @@ def test_windows_short_temp_ancestry_when_available(tmp_path):
     assert file_digest(sample, member="examples/p1/evidence.json")[1] == 7
 
 
-def test_rc1_manifest_remains_readable(tmp_path):
-    archive = tmp_path / "rc1.zip"
-    make_bundle(archive, version="0.4.0rc1")
-    assert verify_archive(archive)["release_version"] == "0.4.0rc1"
+@pytest.mark.parametrize("version", ["0.4.0rc1", "0.4.0rc2"])
+def test_historical_manifest_remains_readable(tmp_path, version):
+    archive = tmp_path / f"{version}.zip"
+    make_bundle(archive, version=version)
+    assert verify_archive(archive)["release_version"] == version
+
+
+def test_rc3_distribution_gate_binds_sidecars_and_candidate_sha(tmp_path):
+    root = tmp_path / "release"
+    root.mkdir()
+    archive_name = "xauusd-quote-lab-0.4.0rc3.zip"
+    file = b"approved"
+    manifest = {
+        "schema_version": SCHEMA,
+        "release_version": "0.4.0rc3",
+        "classification": "SYNTHETIC",
+        "code_sha": "a" * 40,
+        "datasets": {"p1": {}, "p2": {}, "p21": {}},
+        "files": {"README.md": entry_meta(hashlib.sha256(file).hexdigest(), len(file), "source")},
+    }
+    payload = json_bytes(manifest)
+    archive = root / archive_name
+    with ZipFile(archive, "x") as bundle:
+        bundle.writestr(zip_info(MANIFEST_NAME), payload)
+        bundle.writestr(zip_info("README.md"), file)
+
+    def set_sidecar(value):
+        (root / MANIFEST_NAME).write_bytes(value)
+        (root / "SHA256SUMS").write_text(
+            f"{hashlib.sha256(archive.read_bytes()).hexdigest()}  {archive_name}\n"
+            f"{hashlib.sha256(value).hexdigest()}  {MANIFEST_NAME}\n",
+            encoding="ascii",
+        )
+
+    def check(sha):
+        return subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                "-S",
+                "scripts/release_gate.py",
+                "bundle",
+                "--sha",
+                sha,
+                "--directory",
+                str(root),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    set_sidecar(payload)
+    result = check("a" * 40)
+    assert result.returncode == 0, result.stderr
+    assert "Distribution code SHA differs" in check("b" * 40).stderr
+    set_sidecar(json_bytes({**manifest, "code_sha": "b" * 40}))
+    assert "External and embedded manifests differ" in check("a" * 40).stderr

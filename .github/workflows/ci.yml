@@ -1,7 +1,24 @@
-name: Synthetic CI
-on: [push, pull_request]
+name: Synthetic CI and release verification
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      create_draft:
+        description: Request a draft prerelease after both verification jobs pass
+        type: boolean
+        default: false
+      reviewed_tag:
+        description: Existing reviewed tag for the exact selected main revision
+        type: string
+        required: false
 permissions:
   contents: read
+env:
+  PYTHON_VERSION: "3.12.14"
+  NODE_VERSION: "24.22.1"
+  UV_VERSION: "0.8.22"
+  RC3_ZIP: xauusd-quote-lab-0.4.0rc3.zip
 jobs:
   synthetic:
     strategy:
@@ -11,10 +28,15 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
-          python-version: "3.12"
-      - run: python -m pip install uv==0.8.22
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: python -m pip install uv==${{ env.UV_VERSION }}
+      - run: python scripts/release_gate.py source --sha ${{ github.sha }}
+      - run: uv lock --check
       - run: python scripts/preflight.py
       - run: uv sync --frozen --extra dev
       - run: uv run --frozen --extra dev ruff check .
@@ -26,29 +48,122 @@ jobs:
       - run: uv run --frozen --extra dev python scripts/audit_public_files.py
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version: "24"
+          node-version: ${{ env.NODE_VERSION }}
+      - run: python -I -S scripts/workstation.py preflight
       - run: npm --prefix web ci
       - run: npm --prefix web test
       - run: npm --prefix web run build
       - run: npm --prefix web audit
       - run: uv run --frozen --extra dev python scripts/start_observatory.py --artifacts dist/observatory-inputs --prepare-only
+      - run: python scripts/release_gate.py goldens --sha ${{ github.sha }} --directory dist/observatory-inputs
       - if: runner.os == 'Linux'
         run: npm --prefix web exec -- playwright install --with-deps chromium
       - if: runner.os == 'Windows'
         run: npm --prefix web exec -- playwright install chromium
       - run: npm --prefix web run test:e2e
+
+  canonical:
+    name: Canonical RC3 package
+    needs: synthetic
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: python -m pip install uv==${{ env.UV_VERSION }}
+      - run: python scripts/release_gate.py source --sha ${{ github.sha }}
+      - run: uv lock --check
+      - run: uv run --frozen --extra dev python scripts/audit_public_files.py
+      - run: sh workstation.sh prepare --artifacts dist/observatory-inputs
+      - run: python scripts/release_gate.py goldens --sha ${{ github.sha }} --directory dist/observatory-inputs
+      - run: sh workstation.sh package --artifacts dist/observatory-inputs --output dist/workstation-release
+      - run: python -I -S scripts/release_gate.py bundle --sha ${{ github.sha }} --directory dist/workstation-release
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: rc3-${{ github.sha }}
+          path: dist/workstation-release/*
+          if-no-files-found: error
+
+  archive-smoke:
+    name: Canonical archive verification (${{ matrix.os }})
+    needs: canonical
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: rc3-${{ github.sha }}
+          path: dist/workstation-release
+      - run: python -I -S scripts/release_gate.py bundle --sha ${{ github.sha }} --directory dist/workstation-release
       - if: runner.os == 'Windows'
         shell: pwsh
-        run: .\workstation.ps1 preflight
-      - if: runner.os == 'Windows'
-        shell: pwsh
-        run: .\workstation.ps1 package --artifacts dist/observatory-inputs --output dist/workstation-release
-      - if: runner.os == 'Windows'
-        shell: pwsh
-        run: .\workstation.ps1 smoke --archive dist/workstation-release/xauusd-quote-lab-0.4.0rc2.zip
+        run: |
+          $archive = "dist/workstation-release/$env:RC3_ZIP"
+          .\workstation.ps1 verify --archive $archive
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          .\workstation.ps1 smoke --archive $archive
       - if: runner.os == 'Linux'
-        run: sh workstation.sh preflight
-      - if: runner.os == 'Linux'
-        run: sh workstation.sh package --artifacts dist/observatory-inputs --output dist/workstation-release
-      - if: runner.os == 'Linux'
-        run: sh workstation.sh smoke --archive dist/workstation-release/xauusd-quote-lab-0.4.0rc2.zip
+        run: |
+          archive="dist/workstation-release/$RC3_ZIP"
+          sh workstation.sh verify --archive "$archive"
+          sh workstation.sh smoke --archive "$archive"
+
+  draft-release:
+    name: Create approved RC3 draft prerelease
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.create_draft
+    needs: archive-smoke
+    runs-on: ubuntu-latest
+    environment: release-publication
+    concurrency: rc3-draft-publication
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: rc3-${{ github.sha }}
+          path: dist/workstation-release
+      - run: python -I -S scripts/release_gate.py bundle --sha ${{ github.sha }} --directory dist/workstation-release
+      - name: Require a reviewed tag pointing to the verified main revision
+        env:
+          REVIEWED_TAG: ${{ inputs.reviewed_tag }}
+        run: |
+          test "$REVIEWED_TAG" = "v0.4.0rc3"
+          git fetch --no-tags origin "refs/tags/$REVIEWED_TAG"
+          test "$(git rev-parse 'FETCH_HEAD^{commit}')" = "$GITHUB_SHA"
+          main=$(git ls-remote --exit-code origin refs/heads/main | cut -f1)
+          test "$main" = "$GITHUB_SHA"
+      - name: Upload verified assets to a draft prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v0.4.0rc3 \
+            "dist/workstation-release/$RC3_ZIP" \
+            dist/workstation-release/release-manifest.json \
+            dist/workstation-release/SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --draft --prerelease \
+            --title "XAUUSD Quote Research Lab 0.4.0rc3" \
+            --notes-file docs/RC3_RELEASE_NOTES.md

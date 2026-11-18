@@ -38,3 +38,7 @@ The [P4 offline workstation](docs/P4_WORKSTATION.md) documents Windows and
 Linux launch, clean release verification, and the source build. The
 [offline input contract](docs/P4_OFFLINE_IMPORT.md) covers validated
 synthetic fixtures and quarantine receipts.
+
+The [RC3 release notes](docs/RC3_RELEASE_NOTES.md) document the offline ZIP.
+The [publication runbook](docs/RC3_PUBLICATION.md) explains exact-SHA CI,
+same-archive Ubuntu/Windows verification, and approval for a Draft Release.
