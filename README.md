@@ -24,3 +24,6 @@ Read [project rules](AGENTS.md), the [canonical specification](docs/CODEX_NEW_CH
 
 The [P2 sampling experiment](docs/P2_SAMPLING.md) defines the synthetic
 truth oracle, frozen schedule grid, metric conventions, and reproduction commands.
+
+The [P2.1 factorial study](docs/P21_FACTORIAL.md) adds matched-weight tail
+estimands, finite-phase checks and constructive identifiability examples.
