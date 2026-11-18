@@ -1,6 +1,8 @@
 # XAUUSD Quote Research Lab
 
-This private research repository uses Python 3.12 to measure synthetic XAUUSD bid and ask observations. Cloud inputs, fixtures and examples are synthetic.
+This public, synthetic-only research repository uses Python 3.12 to study XAUUSD bid/ask observation, polling sensitivity and measurement identifiability. It is not a live broker feed, trading system or evidence of executable prices.
+
+**Full P0–P4 source is integrated on `main`.** [Public release handoff](docs/PUBLIC_RELEASE_HANDOFF.md) explains the verified RC2 source SHA, Ubuntu/Windows CI, developer and workstation startup, research limits, and why the historical RC2 ZIP is not currently a downloadable GitHub Release asset.
 
 Run from the repository root with Python 3.12 and uv.
 
