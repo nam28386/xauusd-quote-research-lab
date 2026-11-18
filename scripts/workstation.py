@@ -5,7 +5,6 @@ import json
 import os
 import re
 import shutil
-import signal
 import subprocess
 import sys
 from http.client import HTTPConnection
@@ -78,7 +77,7 @@ def build(tools: dict[str, str]):
     call([tools["npm"], "--prefix", "web", "run", "build"])
 
 
-def start(artifacts: Path, port: int, host: str):
+def start(artifacts: Path, port: int, host: str, *, stop_on_input: bool):
     from xauusd_quote_lab.observatory import main as serve
     from xauusd_quote_lab.workstation_release import MANIFEST_NAME, verify_installed
 
@@ -92,12 +91,8 @@ def start(artifacts: Path, port: int, host: str):
     args = ["--host", host, "--port", str(port), "--web", str(ROOT / "web/dist")]
     for family in ("p1", "p2", "p21"):
         args.extend((f"--{family}", str(artifacts / family)))
-    if os.name == "nt" and hasattr(signal, "SIGBREAK"):
-
-        def interrupt(_signum, _frame):
-            raise KeyboardInterrupt
-
-        signal.signal(signal.SIGBREAK, interrupt)
+    if stop_on_input:
+        args.append("--shutdown-on-stdin")
     serve(args)
 
 
@@ -145,19 +140,18 @@ def smoke_checks(port: int):
 
 
 def smoke(script: Path, artifacts: Path | None):
-    args = [sys.executable, "-I", "-S", str(script), "start", "--port", "0"]
+    args = [sys.executable, "-I", "-S", str(script), "start", "--port", "0", "--shutdown-on-stdin"]
     if artifacts is not None:
         args.extend(("--artifacts", str(artifacts)))
-    flags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
     with subprocess.Popen(
         args,
         cwd=script.parent.parent,
+        stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
         encoding="utf-8",
         errors="replace",
-        creationflags=flags,
     ) as child:
         output: Queue[str | None] = Queue()
 
@@ -190,7 +184,7 @@ def smoke(script: Path, artifacts: Path | None):
                 raise ValueError("Timed out waiting for the loopback server")
         finally:
             if child.poll() is None:
-                child.send_signal(signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGINT)
+                child.stdin.close()
                 try:
                     child.wait(timeout=10)
                 except subprocess.TimeoutExpired:
@@ -220,6 +214,7 @@ def main():
         if name == "start":
             command.add_argument("--host", choices=["127.0.0.1"], default="127.0.0.1")
             command.add_argument("--port", default=8765, type=int)
+            command.add_argument("--shutdown-on-stdin", action="store_true", help=argparse.SUPPRESS)
         if name == "smoke":
             command.add_argument("--archive", type=Path)
             command.add_argument("--sha256")
@@ -257,7 +252,7 @@ def main():
         build(preflight())
         print(create_release(ROOT, artifacts, args.output.resolve()))
     elif args.command == "start":
-        start(artifacts, args.port, args.host)
+        start(artifacts, args.port, args.host, stop_on_input=args.shutdown_on_stdin)
     elif args.command == "verify":
         if not args.archive and args.sha256:
             parser.error("--sha256 requires --archive")

@@ -48,3 +48,8 @@ If API permission prevents reading hosted CI, report that gate as UNKNOWN.
 The release can be evaluated locally while cross-platform acceptance remains
 pending. Do not infer real-data readiness from the fixture suite. The
 workstation has no live collector or automatic data promotion.
+
+The P4 dependency audit identified PYSEC-2026-1845 in the baseline pytest
+version. The developer lock pins pytest 9.0.3, the audited fixed version.
+This affects the test harness. Candidate acceptance still requires exact
+baseline replay comparisons.
