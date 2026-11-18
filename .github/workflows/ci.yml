@@ -24,5 +24,16 @@ jobs:
       - run: uv run --frozen --extra dev python -m xauusd_quote_lab.synthetic
       - run: uv run --frozen --extra dev python -m xauusd_quote_lab.replay
       - run: uv run --frozen --extra dev python scripts/audit_public_files.py
-      - run: uv run --frozen --extra dev python -m xauusd_quote_lab.sampling_experiments --output dist/p2-experiment
-      - run: uv run --frozen --extra dev python -m xauusd_quote_lab.factorial_experiment --output dist/p21-experiment
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+      - run: npm --prefix web ci
+      - run: npm --prefix web test
+      - run: npm --prefix web run build
+      - run: npm --prefix web audit
+      - run: uv run --frozen --extra dev python scripts/start_observatory.py --artifacts dist/observatory-inputs --prepare-only
+      - if: runner.os == 'Linux'
+        run: npm --prefix web exec -- playwright install --with-deps chromium
+      - if: runner.os == 'Windows'
+        run: npm --prefix web exec -- playwright install chromium
+      - run: npm --prefix web run test:e2e
