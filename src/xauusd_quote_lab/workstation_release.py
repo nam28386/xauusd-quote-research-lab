@@ -13,8 +13,8 @@ from .observatory import P2_FILES, P21_FILES, classify, json_bytes, load_dataset
 from .observatory_schema import COMMIT, SHA, InvalidArtifact, decode, is_count, matches, require
 from .replay import verified_checkout_revision
 
-VERSION = "0.4.0rc2"
-SUPPORTED_VERSIONS = ("0.4.0rc1", VERSION)
+VERSION = "0.5.0rc1"
+SUPPORTED_VERSIONS = ("0.4.0rc1", "0.4.0rc2", VERSION)
 MANIFEST_NAME = "release-manifest.json"
 SCHEMA = "xauusd-workstation-release-v1"
 MAX_TOTAL = 128 * 1024 * 1024

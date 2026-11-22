@@ -130,6 +130,10 @@ def smoke_checks(port: int):
         "p21": 6912,
     }:
         raise ValueError("Published datasets do not match the synthetic workstation")
+    _, payload = read_http(port, "/api/v1/sampling-stress")
+    stress = json.loads(payload)
+    if stress["classification"] != "SYNTHETIC" or len(stress["rows"]) != 64:
+        raise ValueError("Unexpected synthetic stress results")
     mime, page = read_http(port, "/")
     asset = re.search(rb'src="(/assets/[a-zA-Z0-9_.-]+\.js)"', page)
     if not mime.startswith("text/html") or not asset:
@@ -194,7 +198,7 @@ def smoke(script: Path, artifacts: Path | None):
             reader.join(timeout=5)
         if child.returncode != 0:
             raise ValueError(f"Workstation shutdown exited with {child.returncode}")
-    print("Smoke passed | health, 3 datasets, HTML and JS, clean shutdown")
+    print("Smoke passed | health, 3 datasets, 64 stress results, HTML and JS, clean shutdown")
 
 
 def path_value(path: str | None, fallback: Path) -> Path:

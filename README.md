@@ -38,3 +38,7 @@ The [P4 offline workstation](docs/P4_WORKSTATION.md) documents Windows and
 Linux launch, clean release verification, and the source build. The
 [offline input contract](docs/P4_OFFLINE_IMPORT.md) covers validated
 synthetic fixtures and quarantine receipts.
+
+The [P5–P9 upgrade guide](docs/P5_P9_WORKSTATION.md) covers acceptance against
+the P4 baseline, comparison benchmarks, the sampling stress study, the private
+pilot protocol, and offline candidate provenance.

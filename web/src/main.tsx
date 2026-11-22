@@ -102,10 +102,46 @@ function Overview({datasets, navigate}: {datasets: Dataset[]; navigate: (page: R
       <small>{dataset.verification.replaceAll("-", " ")} · {Object.keys(dataset.artifacts).length} artifacts</small>
       <button className="link" onClick={() => navigate(dataset.id === "p1" ? "evidence" : dataset.id === "p2" ? "sampling" : "factorial")}>Inspect dataset ↗</button>
     </article>)}</div>
+    <SamplingStress/>
     <section className="panel boundary"><h3>Interpretation boundaries</h3>
       <p>These artifacts describe deterministic synthetic scenarios. The factorial cells are configurations, and the as-of tolerance is a snapshot age cap. The evidence leaves real tick completeness, broker independence, execution costs and actor identity unknown.</p>
     </section>
   </>;
+}
+
+function SamplingStress() {
+  type StressRow = {
+    scenario: string; interval_ms: number; phase_percent: number;
+    coverage: string; missing_ns: string; available_polls: number; total_polls: number;
+    max_origin_age_ns: string | null; events: {recall: string | null};
+    spread: {sampled: {values: Record<string, string | null>}};
+  };
+  const [interval, setInterval] = useState("250");
+  const response = api<{version: string; input_sha256: string; rows: StressRow[]}>("/api/v1/sampling-stress");
+  const data = response?.result;
+  if (!data) return <Loading error={response?.error}/>;
+  const rows = data.rows.filter(row => String(row.interval_ms) === interval);
+  return <section className="panel">
+    <div className="panel-head"><h3>Sampling under adverse conditions</h3>
+      <a href="/api/v1/sampling-stress" download>Download stress evidence ↓</a></div>
+    <Select label="Stress polling interval (ms)" value={interval} options={intervals} change={setInterval}/>
+    <div className="table-wrap"><table>
+      <thead><tr>{["Scenario", "Phase (%)", "Coverage", "Missing (ns)", "Available polls",
+        "Max origin age (ns)", "Event recall", "Duration p95 / p99", "Snapshot p95 / p99"]
+        .map(value => <th key={value}>{value}</th>)}</tr></thead>
+      <tbody>{rows.map(row => {
+        const values = row.spread.sampled.values;
+        return <tr key={`${row.scenario}-${row.phase_percent}`}>
+          <td>{row.scenario}</td><td>{row.phase_percent}</td><td>{row.coverage}</td>
+          <td>{row.missing_ns}</td><td>{row.available_polls} / {row.total_polls}</td>
+          <td><Exact value={row.max_origin_age_ns}/></td><td><Exact value={row.events.recall}/></td>
+          <td><Exact value={values.duration_p95}/> / <Exact value={values.duration_p99}/></td>
+          <td><Exact value={values.snapshot_p95}/> / <Exact value={values.snapshot_p99}/></td>
+        </tr>;
+      })}</tbody>
+    </table></div>
+    <small>{data.version} · SYNTHETIC · USD/troy oz for spread · Input SHA-256 <code>{data.input_sha256}</code></small>
+  </section>;
 }
 
 function ConfigurationTable({rows, metric, session, select}: {

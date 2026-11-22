@@ -9,6 +9,9 @@ test("renders verified routes, interactive charts and exact configuration links"
   await page.goto("/");
   await expect(page.getByRole("heading", {name:"Research observatory",exact:true})).toBeVisible();
   await expect(page.getByText("6,912 result rows")).toBeVisible();
+  await expect(page.getByRole("heading", {name:"Sampling under adverse conditions"})).toBeVisible();
+  await page.getByLabel("Stress polling interval (ms)").selectOption("500");
+  await expect(page.getByRole("row").filter({hasText:"clock-regression"})).toHaveCount(4);
   await page.getByRole("button", {name:/Explore factorial stress/}).click();
   const heat = page.getByRole("img",{name:"Factorial detection heatmap",exact:true});
   await expect(heat.locator(".heatmaplayer image")).toBeVisible();

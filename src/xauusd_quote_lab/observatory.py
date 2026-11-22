@@ -39,6 +39,7 @@ from .observatory_schema import (
     row_config,
     validate_fields,
 )
+from .sampling_stress import report_bytes
 from .synthetic import FIXTURE_SHA256
 
 MAX_FILE = 96 * 1024 * 1024
@@ -533,6 +534,8 @@ class Observatory:
 
     def dispatch(self, path: str, query: dict) -> tuple[bytes | Path, str, str | None]:
         parts = path.split("/")
+        if path == "/api/v1/sampling-stress" and not query:
+            return report_bytes(), "application/json", "sampling-stress.json"
         if path == "/api/v1/health" and not query:
             return (
                 json_bytes(
