@@ -4,6 +4,15 @@ The public workstation uses synthetic inputs. The private Windows pilot has its 
 capture and replay workflow. P4 validation and the published P1/P2/P2.1 metric versions
 retain their existing contracts.
 
+## Verified milestones
+
+The implementation in [PR #6](https://github.com/nam28386/xauusd-quote-research-lab/pull/6)
+passed Windows and Ubuntu [CI at commit `6f75e33`](https://github.com/nam28386/xauusd-quote-research-lab/actions/runs/44969803699),
+including the 25-file baseline comparison and offline archive smoke checks.
+A clean Windows extraction was also opened in Chromium and the stress filter
+was exercised over loopback. The workflow for a tagged build remains a
+separate release step.
+
 ## Reproduce the research
 
 Use a committed checkout with Python 3.12 and the frozen dependencies.
@@ -44,6 +53,14 @@ identical replay reports. Establish the instrument unit before publishing
 comparative measurements. Evaluate REAL and DEMO in separate groups, and
 require compatible receive clocks and three eligible broker aliases for a median.
 Keep capture files and reports on the Windows workstation.
+
+Connection and quote availability are initial checks. For the full session
+review, preserve raw source timestamps and local receive timestamps separately.
+Record any display-time conversion as derived data with its offset and
+assumptions. If the clock relationship is unresolved, treat source-based
+quote age as unavailable. Use compatible receive clocks for point-in-time
+matching and preserve gaps and exclusions. The market-open session review
+remains an empirical acceptance gate.
 
 ## Build and verify an offline candidate
 
