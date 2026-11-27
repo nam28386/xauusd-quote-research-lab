@@ -31,7 +31,7 @@ jobs:
       - run: npm --prefix web test
       - run: npm --prefix web run build
       - run: npm --prefix web audit
-      - run: uv run --frozen --extra dev python scripts/start_observatory.py --artifacts dist/observatory-inputs --prepare-only
+      - run: uv run --frozen --extra dev python scripts/accept_baseline.py --artifacts dist/observatory-inputs
       - if: runner.os == 'Linux'
         run: npm --prefix web exec -- playwright install --with-deps chromium
       - if: runner.os == 'Windows'
@@ -45,10 +45,34 @@ jobs:
         run: .\workstation.ps1 package --artifacts dist/observatory-inputs --output dist/workstation-release
       - if: runner.os == 'Windows'
         shell: pwsh
-        run: .\workstation.ps1 smoke --archive dist/workstation-release/xauusd-quote-lab-0.4.0rc2.zip
+        run: .\workstation.ps1 smoke --archive dist/workstation-release/xauusd-quote-lab-0.5.0rc1.zip
       - if: runner.os == 'Linux'
         run: sh workstation.sh preflight
       - if: runner.os == 'Linux'
         run: sh workstation.sh package --artifacts dist/observatory-inputs --output dist/workstation-release
       - if: runner.os == 'Linux'
-        run: sh workstation.sh smoke --archive dist/workstation-release/xauusd-quote-lab-0.4.0rc2.zip
+        run: sh workstation.sh smoke --archive dist/workstation-release/xauusd-quote-lab-0.5.0rc1.zip
+      - if: runner.os == 'Linux' && startsWith(github.ref, 'refs/tags/workstation-v')
+        run: npm --prefix web sbom --omit=dev --sbom-format=cyclonedx > dist/workstation-release/web-sbom.cdx.json
+      - if: runner.os == 'Linux' && startsWith(github.ref, 'refs/tags/workstation-v')
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: workstation-verified
+          path: dist/workstation-release/
+          if-no-files-found: error
+  provenance:
+    if: startsWith(github.ref, 'refs/tags/workstation-v')
+    needs: synthetic
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16
+        with:
+          name: workstation-verified
+          path: dist/workstation-release
+      - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
+        with:
+          subject-path: dist/workstation-release/*

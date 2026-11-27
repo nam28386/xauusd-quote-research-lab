@@ -1,14 +1,14 @@
 """Backward-as-of comparisons on explicitly compatible receive clocks."""
 
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from decimal import Decimal, localcontext
 from statistics import median
 from typing import ClassVar
 
-from .contracts import Environment, Flag, QuoteStream
-from .quality import PRICE_CONTEXT, QuotedPrices, evaluate_stream
+from .contracts import Environment, Flag, QuoteObservation, QuoteStream
+from .quality import PRICE_CONTEXT, QualityState, QuotedPrices, evaluate_stream
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,8 +68,18 @@ def match_stream(
     visible = evaluate_stream(stream, decision)
     if not visible:
         return replace(base, exclusions=frozenset({Flag.NO_OBSERVATION}))
-    # Poll order resolves receive ties and keeps a detected wall reversal from reviving old data.
     row, state, prices = visible[-1]
+    return match_observation(base, row, state, prices, decision, max_age)
+
+
+def match_observation(
+    base: BrokerMatch,
+    row: QuoteObservation,
+    state: QualityState,
+    prices: QuotedPrices | None,
+    decision: int,
+    max_age: int,
+) -> BrokerMatch:
     age = decision - row.received_wall_ns
     exclusions = state.exclusions | ({Flag.STALE} if age > max_age else set())
     return replace(
@@ -80,6 +90,39 @@ def match_stream(
         prices=None if exclusions else prices,
         exclusions=exclusions,
     )
+
+
+def match_decisions(
+    stream: QuoteStream, decisions: Sequence[int], clock_domain: str, max_age: int
+) -> Iterator[BrokerMatch]:
+    if not decisions:
+        return
+    source = stream.source
+    base = BrokerMatch(source.source_id, source.session_id, source.broker_alias, source.environment)
+    if stream.receive_clock_domain != clock_domain:
+        for _ in decisions:
+            yield replace(base, exclusions=frozenset({Flag.CLOCK_INCOMPATIBLE}))
+        return
+
+    # Process each row that can arrive by the last decision once. Quality state
+    # is exposed only after the entire visible prefix passes its processing watermark.
+    checked = evaluate_stream(stream, decisions[-1])
+    index = 0
+    processing_high = -1
+    pending = QualityState(frozenset({Flag.PROCESSING_PENDING}))
+    for decision in decisions:
+        while index < len(checked) and checked[index][0].received_wall_ns <= decision:
+            processing_ns = checked[index][0].processing_wall_ns
+            if type(processing_ns) is int:
+                processing_high = max(processing_high, processing_ns)
+            index += 1
+        if index == 0:
+            yield replace(base, exclusions=frozenset({Flag.NO_OBSERVATION}))
+            continue
+        row, state, prices = checked[index - 1]
+        if processing_high > decision:
+            state, prices = pending, None
+        yield match_observation(base, row, state, prices, decision, max_age)
 
 
 def compare_brokers(
@@ -111,11 +154,16 @@ def compare_brokers(
     exclusions: Counter[Flag] = Counter()
     unmatched = 0
     with localcontext(PRICE_CONTEXT):
-        for decision in decisions_wall_ns:
+        matches_by_stream = [
+            match_decisions(stream, decisions_wall_ns, receive_clock_domain, max_age_ns)
+            for stream in sorted(streams, key=lambda item: item.source.source_id)
+        ]
+        for decision, decision_matches in zip(
+            decisions_wall_ns, zip(*matches_by_stream, strict=True), strict=True
+        ):
             matches = []
             eligible: list[tuple[str, QuotedPrices]] = []
-            for stream in sorted(streams, key=lambda item: item.source.source_id):
-                match = match_stream(stream, decision, receive_clock_domain, max_age_ns)
+            for match in decision_matches:
                 alias = match.broker_alias
                 reason = None
                 if len(groups[alias]) > 1:
